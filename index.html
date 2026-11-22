@@ -98,7 +98,6 @@
   .ledger td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
   .ledger tr:last-child td { border-bottom: none; }
 
-  /* Estilos de las filas de separación de mes */
   .month-separator td {
     background: rgba(255,255,255,0.03); text-align: right; font-size: 12px;
     color: var(--text-muted); padding: 10px 16px; border-bottom: 1px solid var(--border); border-top: 1px solid var(--border);
@@ -164,7 +163,6 @@
   @media (max-width: 768px) {
     .layout { grid-template-columns: 1fr; padding: 10px; }
 
-    /* Menú lateral deslizable */
     .nav {
       display: flex; position: fixed; top: 54px; left: 0; bottom: 0; width: 75%;
       background: var(--bg-base); z-index: 60; padding: 20px;
@@ -183,7 +181,6 @@
     .banner select { font-size: 18px; width: 100%; }
     .banner .big { text-align: left; }
 
-    /* Tabla como tarjetas */
     .ledger thead { display: none; }
     .ledger tr:not(.month-separator) { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); padding: 14px 14px 30px 14px; position: relative; }
     .ledger td { display: block; border: none; padding: 2px 0; text-align: left !important; }
@@ -194,7 +191,6 @@
     .row-actions { position: absolute; left: 14px; bottom: 6px; }
     .ledger td:last-child { padding: 0; }
 
-    /* Ajustar el separador de mes en móvil */
     .month-separator td { display: block; text-align: right; }
 
     .fab { display: flex; }
@@ -232,7 +228,6 @@
     
     <div style="flex:1;"></div>
     
-    <!-- BOTÓN DE INSTALAR PWA (Oculto por defecto hasta que el navegador lo permita) -->
     <button id="installBtn" class="btn hide-mobile" style="display:none; background:var(--cyan); color:#04161a; border:none; margin-bottom:8px;" onclick="installPWA()">
       📲 Instalar App
     </button>
@@ -250,6 +245,7 @@
           <div class="desc-sub">CUENTA ACTIVA</div>
           <h2>
             <select id="accountSelector" onchange="changeAccount(this.value)"></select>
+            <button class="icon-btn" onclick="editAccountName()" title="Renombrar Cuenta" style="font-size:16px;">✏️</button>
             <button class="icon-btn" onclick="openModal('accountModal')" title="Crear Nueva Cuenta" style="font-size:16px;">➕</button>
           </h2>
         </div>
@@ -334,14 +330,12 @@
   </main>
 </div>
 
-<!-- FAB (+) MÓVIL -->
 <button class="fab" onclick="openModal('txModal')">+</button>
 
-<!-- MODAL CREAR CUENTA -->
 <div class="modal" id="accountModal">
   <div class="modal-card">
     <h3>Nueva Cuenta (Hoja)</h3>
-    <label>Nombre de la cuenta (ej. Caja, Banco)</label>
+    <label>Nombre de la cuenta</label>
     <input id="newAccountName" placeholder="Nombre...">
     <div class="form-row" style="margin-top:16px;">
       <button class="btn btn-primary" onclick="createAccount()">Guardar</button>
@@ -350,7 +344,6 @@
   </div>
 </div>
 
-<!-- MODAL CREAR/EDITAR TRANSACCIÓN -->
 <div class="modal" id="txModal">
   <div class="modal-card">
     <h3 id="txModalTitle">Nueva Transacción</h3>
@@ -386,7 +379,7 @@ const TOKEN = "DEFTER_SECRET_2026";
 let state = { accounts: [], transactions: [], categories: [], notes: [] };
 let activeAccount = null;
 let barChart, donutChart;
-let deferredPrompt; // Variable para instalar la PWA
+let deferredPrompt;
 
 /* ========== UTILS ========== */
 function fmtMoney(n) { return "$" + (Number(n)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -506,27 +499,19 @@ function renderLedger() {
   const acc = state.accounts.find(a => a.name === activeAccount);
   document.getElementById("activeBalance").textContent = fmtMoney(acc?.balance || 0);
 
-  // Obtener y FILTRAR por cuenta
   let txs = state.transactions.filter(t => t.account === activeAccount);
   
-  // FILTRO POR FECHA (si se seleccionó una)
   const filterDate = document.getElementById("filterDate").value;
   if (filterDate) txs = txs.filter(t => t.datetime.startsWith(filterDate));
 
-  // ORDENAR: de más nuevo a más viejo
-  txs.sort((a,b) => new Date(b.datetime) - new Date(a.datetime));
+  // 🌟 EL CAMBIO MÁGICO: Invertimos el array para que la transacción de hoy salga primero
+  txs.reverse();
 
   let html = "";
-  let currentMonth = "";
-  
-  // Variables para calcular el subtotal mensual
   let mInc = 0;
   let mExp = 0;
+  let currentBalance = acc ? acc.balance : 0;
 
-  let totalSaldo = acc ? acc.balance : 0;
-  let currentBalance = totalSaldo;
-
-  // Función auxiliar para imprimir el separador de mes
   const printMonth = (monthStr) => {
     if(!monthStr) return "";
     const mn = {
@@ -564,7 +549,6 @@ function renderLedger() {
     const sign = t.signedAmount >= 0 ? "+" : "";
     const txtMonto = `${sign}${fmtMoney(t.signedAmount)}`;
     const colorClass = t.signedAmount >= 0 ? 'amount-pos' : 'amount-neg';
-    
     const saldoActualStr = fmtMoney(currentBalance);
 
     html += `<tr>
@@ -680,6 +664,20 @@ async function createAccount() {
     loadState(); 
   } else {
     alert(res.error || "Error al crear cuenta");
+  }
+}
+
+async function editAccountName() {
+  if (!activeAccount) return;
+  const newName = prompt("Nuevo nombre para la cuenta:", activeAccount);
+  if(!newName || newName === activeAccount) return;
+  
+  const res = await api({ action:"renameAccount", oldName: activeAccount, newName: newName });
+  if(res.ok) {
+    activeAccount = newName;
+    loadState();
+  } else {
+    alert(res.error || "Error al cambiar el nombre");
   }
 }
 
@@ -821,24 +819,18 @@ function exportCSV() {
   a.click();
 }
 
-/* ========== PWA (INSTALAR APP) ========== */
-// 1. Registrar el Service Worker
+/* ========== PWA ========== */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW error:', err));
   });
 }
-
-// 2. Capturar el evento de instalación
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
-  // Mostrar el botón de instalar en el menú
   const installBtn = document.getElementById('installBtn');
   if(installBtn) installBtn.style.display = 'inline-flex';
 });
-
-// 3. Función para cuando el usuario da clic en "Instalar App"
 async function installPWA() {
   if (!deferredPrompt) {
     alert("Para instalar en iPhone: toca el botón Compartir (⬆️) y elige 'Añadir a pantalla de inicio'.");
