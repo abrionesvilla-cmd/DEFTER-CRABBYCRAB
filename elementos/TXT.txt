@@ -1,0 +1,157 @@
+====================================================================
+CONTEXTO DEL PROYECTO: DEFTER (Libro Contable)
+====================================================================
+Fecha de creación de este contexto: Noviembre 2026 (¡Ojo con esto!)
+Propósito: Este archivo sirve como una nota de traspaso para cualquier IA (ChatGPT, 
+Claude, Gemini, etc.) o para el propio desarrollador. Explica la arquitectura, 
+las reglas del negocio, el diseño y las decisiones técnicas tomadas en la app.
+
+====================================================================
+1. ARQUITECTURA Y TECNOLOGÍAS
+====================================================================
+El proyecto NO es una sola aplicación. Son TRES piezas separadas que se comunican 
+entre sí mediante una API:
+
+A) Base de Datos: Google Sheets.
+   - Es el corazón de los datos.
+   - Tiene una hoja oculta/interna llamada "_Config" (guarda las categorías y grupos).
+   - Tiene otra hoja llamada "_Notas" (para las notas de texto).
+   - Tiene una hoja por cada cuenta o caja (ej. "Caja", "Banco", "Ahorros").
+
+B) Backend / API: Google Apps Script.
+   - El código está alojado en script.google.com (archivo appsscript.gs).
+   - Se publica como "Aplicación Web" (Ejecutar como: Yo. Acceso: Cualquier usuario).
+   - Recibe peticiones GET y POST desde el HTML, valida un token de seguridad, y 
+     lee/escribe en el Google Sheet.
+   - Usa LockService para evitar colisiones si se envían dos peticiones a la vez.
+
+C) Frontend: GitHub Pages.
+   - Es un único archivo `index.html` que contiene HTML, CSS (puro) y JS (vanilla).
+   - Usa la librería "Chart.js" (vía CDN) para dibujar los gráficos de Informes.
+   - Se comunica con Apps Script usando la función fetch() y la URL del Web App.
+   - Tiene un diseño Responsive (Mobile-First): es distinto en celular y en PC.
+
+====================================================================
+2. ADVERTENCIA CRÍTICA SOBRE LAS FECHAS (¡NO IGNORAR!)
+====================================================================
+- El año actual del usuario es 2026 (y vamos hacia 2027).
+- Si una IA lee fechas como "2026-11-13" en el código o capturas, ¡ES CORRECTO!
+- NUNCA asumir que es un error del sistema ni sugerir cambiarlas a 2024/2025. 
+- La app usa la hora local del dispositivo del usuario.
+- El campo de fecha en el formulario rápido se actualiza automáticamente al minuto 
+  exacto (a menos que el usuario lo haya cambiado manualmente, lo cual se detecta 
+  con dataset.manual).
+
+====================================================================
+3. REGLAS DE SEGURIDAD Y SINCRONIZACIÓN
+====================================================================
+- TOKEN SECRETO: Para que nadie más pueda escribir en el Sheet, tanto el HTML como 
+  el Apps Script comparten una constante llamada SECRET_TOKEN. Actualmente es: 
+  "DEFTER_SECRET_2026". Si se cambia en uno, DEBE cambiarse en el otro.
+- INDICADOR DE ESTADO: La cabecera del HTML muestra el estado de conexión:
+  * 🟢 Verde: "Sincronizado" (todo cargó bien).
+  * 🟡 Amarillo: "Sincronizando..." (parpadea mientras hace la petición).
+  * 🔴 Rojo: "Error del servidor" (falló la conexión).
+- SINCRONIZACIÓN: Hay un botón "🔄 Sincronizar" en el menú lateral que fuerza una 
+  recarga de los datos llamando a loadState().
+
+====================================================================
+4. DISEÑO DE LA BASE DE DATOS (Columnas exactas)
+====================================================================
+A) Hoja _Config (Categorías):
+   - A: Tipo (siempre dice "cat")
+   - B: ID (ej. "cat_123456789")
+   - C: Nombre (ej. "Venta de dulces")
+   - D: ParentID (si es un grupo dice "group", si es subcategoría tiene el ID del grupo)
+   - E: Contenido (no se usa, queda vacío)
+
+B) Hoja _Notas:
+   - A: ID (ej. "note_123456789")
+   - B: Título
+   - C: Contenido
+   - D: Fecha (ISO String)
+
+C) Hojas de Cuentas (ej. "Caja", "Banco"):
+   - A: Fecha (formato yyyy-mm-dd hh:mm)
+   - B: Categoría (texto)
+   - C: Tipo (Ingreso / Gasto / Transferencia)
+   - D: Descripción (texto)
+   - E: Monto (número, negativo para gastos, positivo para ingresos)
+   - F: _id (Identificador único. Si una fila vieja no tiene ID, el backend genera 
+     un ID fijo llamado "legacy_NombreHoja_NumFila" y lo guarda para siempre).
+
+====================================================================
+5. LÓGICA DE NEGOCIO Y FUNCIONALIDADES DEL FRONTEND
+====================================================================
+1. VISTA CUENTAS:
+   - Hay un selector de cuenta (menú desplegable) en la cabecera para cambiar entre 
+     "Caja", "Banco", etc.
+   - Al lado del selector hay un botón "➕" para CREAR una nueva cuenta (hoja).
+   - Tabla de movimientos: Muestra las transacciones MÁS RECIENTES PRIMERO (orden 
+     descendente).
+   - Separadores de mes: Entre las transacciones, se inyecta una fila especial 
+     (class="month-separator") que calcula el subtotal del mes (Ingresos - Gastos).
+   - Saldo acumulado: La columna "Saldo Acum." muestra el saldo que había en la cuenta 
+     justo después de esa transacción.
+   - Descripción: Se muestra debajo de la categoría (estilo app de banco).
+   - Acciones: Cada fila tiene un botón ✏️ (Editar) y un 🗑️ (Borrar).
+
+2. MODAL DE TRANSACCIÓN (Crear / Editar):
+   - Se abre con el botón "+ Transacción" (en PC) o el botón flotante "+" (en móvil).
+   - Si se le da a Editar (✏️), el mismo modal se rellena con los datos de la 
+     transacción y al guardar ejecuta "editTransaction" en lugar de "addTransaction".
+   - Soporta Ingresos, Gastos y Transferencias (aunque la UI de transferencia está 
+     en desarrollo).
+
+3. CATEGORÍAS Y NOTAS:
+   - Tienen su propia pestaña en el menú.
+   - Puedes crear, editar (✏️) y borrar (🗑️) tanto grupos como subcategorías.
+   - Las notas se guardan en la hoja independiente _Notas (no en _Config).
+
+4. INFORMES:
+   - Usa Chart.js.
+   - Gráfico de Barras: Compara Ingresos vs Gastos totales.
+   - Gráfico de Dona (Donut): Muestra la distribución de Gastos por categoría.
+   - Botón para exportar las transacciones actuales a un archivo CSV.
+
+5. DISEÑO RESPONSIVE (CSS):
+   - En PC: Layout de dos columnas (menú lateral izquierdo + contenido).
+   - En Móvil (max-width: 768px):
+     * El menú lateral desaparece y se abre con un botón de Hamburguesa (☰).
+     * La tabla se transforma en "tarjetas" apiladas (thead oculto, tds en bloque).
+     * El formulario rápido de abajo se oculta y aparece un botón flotante (FAB).
+
+====================================================================
+6. HISTORIAL DE ERRORES CORREGIDOS (Para no volver a cometerlos)
+====================================================================
+- CSS Roto: Había un texto "//hola com oe" en el CSS que rompía los estilos.
+- IDs Gigantes: Los IDs antes se generaban con Date.now() cada vez que se recargaba 
+  la página, lo que rompía la edición. Ahora el backend guarda IDs fijos.
+- Borrado Peligroso: Antes, borrar una categoría podía borrar notas por error. Ahora 
+  están en hojas separadas (_Notas vs _Config) y el backend valida el tipo.
+- Fechas Locales: El input datetime-local debe respetar la zona horaria del usuario.
+- Falta de Edición: En una versión anterior se olvidó incluir el botón para editar 
+  transacciones. Ya está solucionado y probado.
+
+====================================================================
+7. INSTRUCCIONES PARA LA IA QUE LEA ESTO
+====================================================================
+Si el usuario te pide hacer cambios en el código:
+1. NUNCA asumas que las fechas en 2026 son un error.
+2. Respeta la arquitectura: Backend en Apps Script, Frontend en HTML plano.
+3. Si tocas el Frontend, mantén las clases CSS y los IDs de los elementos (ej. 
+   id="statusIndicator", id="ledgerBody", onclick="editTx()") para que el JavaScript 
+   no se rompa.
+4. Si el usuario pide agregar una función nueva (ej. presupuestos), agrégala al backend 
+   (doPost) y luego conéctala al frontend (función api()).
+5. Al dar el código, dalo COMPLETO (tanto el HTML como el Apps Script si es necesario), 
+   porque el usuario copia y pega todo el archivo para reemplazarlo.
+6. Si hay un error de "Error del servidor" (indicador rojo), revisa que:
+   - El TOKEN coincida en ambos archivos.
+   - La URL del API_URL en el HTML sea la correcta de la implementación de Apps Script.
+   - En Apps Script se haya creado una "Nueva Versión" en Implementar > Administrar 
+     Implementaciones (no basta con guardar el código).
+
+====================================================================
+FIN DEL DOCUMENTO
+====================================================================
