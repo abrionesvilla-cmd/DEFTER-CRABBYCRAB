@@ -229,7 +229,14 @@
     <div class="nav-item" onclick="switchView('reports')">📊 Informes</div>
     <div class="nav-item" onclick="switchView('categories')">🏷️ Categorías</div>
     <div class="nav-item" onclick="switchView('notes')">📝 Notas</div>
+    
     <div style="flex:1;"></div>
+    
+    <!-- BOTÓN DE INSTALAR PWA (Oculto por defecto hasta que el navegador lo permita) -->
+    <button id="installBtn" class="btn hide-mobile" style="display:none; background:var(--cyan); color:#04161a; border:none; margin-bottom:8px;" onclick="installPWA()">
+      📲 Instalar App
+    </button>
+    
     <button class="btn" onclick="loadState()">🔄 Sincronizar</button>
   </aside>
 
@@ -379,6 +386,7 @@ const TOKEN = "DEFTER_SECRET_2026";
 let state = { accounts: [], transactions: [], categories: [], notes: [] };
 let activeAccount = null;
 let barChart, donutChart;
+let deferredPrompt; // Variable para instalar la PWA
 
 /* ========== UTILS ========== */
 function fmtMoney(n) { return "$" + (Number(n)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -515,8 +523,6 @@ function renderLedger() {
   let mInc = 0;
   let mExp = 0;
 
-  // Para calcular el saldo acumulado real (de abajo hacia arriba)
-  // Como lo mostramos al revés, calcularemos el total y restaremos hacia atrás
   let totalSaldo = acc ? acc.balance : 0;
   let currentBalance = totalSaldo;
 
@@ -546,7 +552,6 @@ function renderLedger() {
   txs.forEach(t => {
     const thisMonth = t.datetime.substring(0,7);
     
-    // Si cambia el mes, imprimimos el separador del MES ANTERIOR (como lo estamos recorriendo hacia atrás)
     if (thisMonth !== previousMonth) {
        html += printMonth(previousMonth);
        mInc = 0; mExp = 0;
@@ -560,7 +565,6 @@ function renderLedger() {
     const txtMonto = `${sign}${fmtMoney(t.signedAmount)}`;
     const colorClass = t.signedAmount >= 0 ? 'amount-pos' : 'amount-neg';
     
-    // Saldo acumulado
     const saldoActualStr = fmtMoney(currentBalance);
 
     html += `<tr>
@@ -579,11 +583,9 @@ function renderLedger() {
       </td>
     </tr>`;
 
-    // Restamos al saldo para la siguiente fila (que es más vieja)
     currentBalance -= t.signedAmount;
   });
 
-  // Imprimir el separador del último mes (el más viejo)
   if(txs.length > 0) html += printMonth(previousMonth);
 
   document.getElementById("ledgerBody").innerHTML = html || "<tr><td colspan='4'>Sin movimientos</td></tr>";
@@ -734,7 +736,6 @@ function editTx(id) {
   document.getElementById("mAmount").value = tx.amount;
   document.getElementById("mDesc").value = tx.description;
   
-  // Convertir formato "YYYY-MM-DD HH:mm" a "YYYY-MM-DDTHH:mm" para el input
   const dtFormatted = tx.datetime.replace(" ", "T");
   document.getElementById("mDate").value = dtFormatted;
   
@@ -802,7 +803,6 @@ function switchView(view) {
   document.getElementById("view-"+view).style.display = "block";
   document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
   if (event && event.target) {
-    // Si hace click en el texto interior
     let target = event.target.closest(".nav-item");
     if (target) target.classList.add("active");
   }
@@ -819,6 +819,37 @@ function exportCSV() {
   a.href = URL.createObjectURL(blob);
   a.download = "defter.csv";
   a.click();
+}
+
+/* ========== PWA (INSTALAR APP) ========== */
+// 1. Registrar el Service Worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW error:', err));
+  });
+}
+
+// 2. Capturar el evento de instalación
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Mostrar el botón de instalar en el menú
+  const installBtn = document.getElementById('installBtn');
+  if(installBtn) installBtn.style.display = 'inline-flex';
+});
+
+// 3. Función para cuando el usuario da clic en "Instalar App"
+async function installPWA() {
+  if (!deferredPrompt) {
+    alert("Para instalar en iPhone: toca el botón Compartir (⬆️) y elige 'Añadir a pantalla de inicio'.");
+    return;
+  }
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') {
+    document.getElementById('installBtn').style.display = 'none';
+  }
+  deferredPrompt = null;
 }
 
 /* ========== INICIALIZAR ========== */
