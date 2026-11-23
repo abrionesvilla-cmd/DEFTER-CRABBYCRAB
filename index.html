@@ -118,6 +118,9 @@
   .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
   .note-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; transition: transform 0.2s, box-shadow 0.2s; }
   .note-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  .cat-group-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .cat-group-header { display: flex; justify-content: space-between; align-items: center; font-weight: 700; margin-bottom: 8px; }
+  .cat-item-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-radius: 6px; background: rgba(128,128,128,0.04); margin-top: 6px; font-size: 13px; }
 
   /* ================= FORMULARIOS ================= */
   .form-container { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -130,7 +133,7 @@
 
   /* ================= QUICKBAR DESKTOP ================= */
   .quickbar-desktop {
-    display: flex; gap: 12px; flex-wrap: wrap;
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
     background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
   }
   .quickbar-desktop input, .quickbar-desktop select {
@@ -184,10 +187,10 @@
     .ledger thead { display: none; }
     .ledger tr:not(.month-separator) { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); padding: 14px 14px 30px 14px; position: relative; }
     .ledger td { display: block; border: none; padding: 2px 0; text-align: left !important; }
-    
+
     .ledger td:nth-child(2) { position: absolute; right: 14px; top: 14px; text-align: right !important; font-size: 16px;}
     .ledger td:nth-child(3) { position: absolute; right: 14px; bottom: 10px; color: var(--text-muted); font-size: 13px;}
-    
+
     .row-actions { position: absolute; left: 14px; bottom: 6px; }
     .ledger td:last-child { padding: 0; }
 
@@ -212,7 +215,7 @@
   <div class="header-actions">
     <span id="statusIndicator" class="status-pill ok">Sincronizado</span>
     <button class="icon-btn" onclick="toggleTheme()" id="themeBtn">🌙</button>
-    <button class="btn hide-mobile" onclick="openModal('txModal')">+ Transacción</button>
+    <button class="btn hide-mobile" onclick="openTxModal()">+ Transacción</button>
   </div>
 </header>
 
@@ -221,17 +224,17 @@
 <div class="layout">
   <!-- NAV -->
   <aside class="nav" id="navMenu">
-    <div class="nav-item active" onclick="switchView('accounts')">💳 Cuentas</div>
-    <div class="nav-item" onclick="switchView('reports')">📊 Informes</div>
-    <div class="nav-item" onclick="switchView('categories')">🏷️ Categorías</div>
-    <div class="nav-item" onclick="switchView('notes')">📝 Notas</div>
-    
+    <div class="nav-item active" data-view="accounts" onclick="switchView('accounts')">💳 Cuentas</div>
+    <div class="nav-item" data-view="reports" onclick="switchView('reports')">📊 Informes</div>
+    <div class="nav-item" data-view="categories" onclick="switchView('categories')">🏷️ Categorías</div>
+    <div class="nav-item" data-view="notes" onclick="switchView('notes')">📝 Notas</div>
+
     <div style="flex:1;"></div>
-    
+
     <button id="installBtn" class="btn hide-mobile" style="display:none; background:var(--cyan); color:#04161a; border:none; margin-bottom:8px;" onclick="installPWA()">
       📲 Instalar App
     </button>
-    
+
     <button class="btn" onclick="loadState()">🔄 Sincronizar</button>
   </aside>
 
@@ -296,7 +299,7 @@
       <div class="form-container" style="margin-bottom:16px;">
         <div class="form-row">
           <input id="catName" placeholder="Nombre de categoría">
-          <select id="catKind">
+          <select id="catKind" onchange="toggleCatParent()">
             <option value="group">Grupo</option>
             <option value="item">Subcategoría</option>
           </select>
@@ -319,536 +322,925 @@
 
     <!-- QUICKBAR DESKTOP -->
     <div class="quickbar-desktop">
+      <select id="qType" style="max-width:130px;">
+        <option value="Gasto">Gasto</option>
+        <option value="Ingreso">Ingreso</option>
+      </select>
       <input id="qAmount" type="number" placeholder="Monto" step="0.01">
       <input id="qDesc" placeholder="Descripción">
       <input id="qDate" type="datetime-local">
       <select id="qCategory"></select>
       <select id="qAccount"></select>
-      <button class="btn btn-primary" onclick="submitQuick('Ingreso')">Ingreso</button>
-      <button class="btn" style="color:var(--red);" onclick="submitQuick('Gasto')">Gasto</button>
+      <button class="btn btn-primary" onclick="submitQuickTx()">Guardar</button>
     </div>
+
   </main>
 </div>
 
-<button class="fab" onclick="openModal('txModal')">+</button>
+<!-- FAB MÓVIL -->
+<button class="fab" onclick="openTxModal()" title="Nueva Transacción">+</button>
 
-<div class="modal" id="accountModal">
+<!-- MODAL: CREAR / EDITAR TRANSACCIÓN -->
+<div class="modal" id="txModal">
   <div class="modal-card">
-    <h3>Nueva Cuenta (Hoja)</h3>
-    <label>Nombre de la cuenta</label>
-    <input id="newAccountName" placeholder="Nombre...">
-    <div class="form-row" style="margin-top:16px;">
-      <button class="btn btn-primary" onclick="createAccount()">Guardar</button>
-      <button class="btn" onclick="closeModal('accountModal')">Cancelar</button>
+    <h3 id="txModalTitle">Nueva Transacción</h3>
+    <input type="hidden" id="txEditId">
+
+    <label>Tipo</label>
+    <select id="txType" onchange="toggleTxFields()">
+      <option value="Gasto">Gasto</option>
+      <option value="Ingreso">Ingreso</option>
+      <option value="Transferencia">Transferencia</option>
+    </select>
+
+    <div id="txSingleAccountWrap">
+      <label>Cuenta</label>
+      <select id="txAccount"></select>
+    </div>
+
+    <div id="txTransferAccountsWrap" style="display:none;">
+      <label>Cuenta Origen</label>
+      <select id="txFromAccount"></select>
+      <label>Cuenta Destino</label>
+      <select id="txToAccount"></select>
+    </div>
+
+    <label>Monto</label>
+    <input type="number" id="txAmount" step="0.01" placeholder="0.00">
+
+    <label>Categoría</label>
+    <select id="txCategory"></select>
+
+    <label>Descripción</label>
+    <input type="text" id="txDesc" placeholder="Detalle del movimiento">
+
+    <label>Fecha y Hora</label>
+    <input type="datetime-local" id="txDate">
+
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button class="btn" onclick="closeModal('txModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveTxModal()">Guardar</button>
     </div>
   </div>
 </div>
 
-<div class="modal" id="txModal">
+<!-- MODAL: NUEVA CUENTA -->
+<div class="modal" id="accountModal">
   <div class="modal-card">
-    <h3 id="txModalTitle">Nueva Transacción</h3>
-    <input type="hidden" id="mId">
-    <label>Tipo</label>
-    <select id="mType">
-      <option value="Ingreso">Ingreso</option>
-      <option value="Gasto">Gasto</option>
-      <option value="Transferencia">Transferencia</option>
-    </select>
-    <label>Monto</label>
-    <input id="mAmount" type="number" step="0.01" placeholder="0.00">
-    <label>Categoría</label>
-    <select id="mCategory"></select>
-    <label>Descripción</label>
-    <input id="mDesc" placeholder="Opcional">
-    <label>Fecha y Hora</label>
-    <input id="mDate" type="datetime-local">
-    <label>Cuenta</label>
-    <select id="mAccount"></select>
-    <div class="form-row" style="margin-top:16px;">
-      <button class="btn btn-primary" onclick="submitModal()">Guardar</button>
-      <button class="btn" onclick="closeModal('txModal')">Cancelar</button>
+    <h3>Nueva Cuenta</h3>
+    <label>Nombre de la cuenta</label>
+    <input type="text" id="newAccountName" placeholder="Ej. Caja, Banco, Ahorros">
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button class="btn" onclick="closeModal('accountModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="createAccount()">Crear</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDITAR CATEGORÍA -->
+<div class="modal" id="editCatModal">
+  <div class="modal-card">
+    <h3>Editar Categoría</h3>
+    <input type="hidden" id="editCatId">
+    <label>Nombre</label>
+    <input type="text" id="editCatName">
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button class="btn" onclick="closeModal('editCatModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEditCategory()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDITAR NOTA -->
+<div class="modal" id="editNoteModal">
+  <div class="modal-card">
+    <h3>Editar Nota</h3>
+    <input type="hidden" id="editNoteId">
+    <label>Título</label>
+    <input type="text" id="editNoteTitle">
+    <label>Contenido</label>
+    <textarea id="editNoteContent" style="min-height:90px;"></textarea>
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button class="btn" onclick="closeModal('editNoteModal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveEditNote()">Guardar</button>
     </div>
   </div>
 </div>
 
 <script>
-/* ========== CONFIGURACIÓN ========== */
-const API_URL = "https://script.google.com/macros/s/AKfycbxad_IWOyDtXnp-6fjqVQsGc90yZmag5Oo3QsLYB_JLRef_rgwLkgWJB_yf1TW0d11X/exec"; // ⚠️ Asegúrate que sea tu URL
-const TOKEN = "DEFTER_SECRET_2026";
+const API_URL = "https://script.google.com/macros/s/AKfycbxad_IWOyDtXnp-6fjqVQsGc90yZmag5Oo3QsLYB_JLRef_rgwLkgWJB_yf1TW0d11X/exec";
+const SECRET_TOKEN = "DEFTER_SECRET_2026";
 
-let state = { accounts: [], transactions: [], categories: [], notes: [] };
-let activeAccount = null;
-let barChart, donutChart;
-let deferredPrompt;
+let state = {
+  accounts: [],
+  transactions: [],
+  categories: [],
+  notes: []
+};
+let activeAccount = localStorage.getItem("defter_active_account") || "";
+let barChartInstance = null;
+let donutChartInstance = null;
+let deferredPrompt = null;
 
-/* ========== UTILS ========== */
-function fmtMoney(n) { return "$" + (Number(n)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
-function getLocalISO() {
-  const d = new Date();
-  const pad = n => String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+/* ============================================================
+   HELPERS DE FECHA, MONEDA Y SIGNO
+   ============================================================ */
+function getLocalDateTimeValue(dateObj = new Date()) {
+  const d = dateObj instanceof Date && !isNaN(dateObj.getTime()) ? dateObj : new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/* ========== INDICADOR DE ESTADO ========== */
-function setStatus(status) {
+function parseLocalDate(dtStr) {
+  if (!dtStr) return new Date(0);
+  const clean = String(dtStr).trim().replace(" ", "T");
+  const d = new Date(clean);
+  return isNaN(d.getTime()) ? new Date(0) : d;
+}
+
+function formatMoney(num) {
+  const n = Number(num) || 0;
+  const sign = n < 0 ? "-" : "";
+  return `${sign}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// 🔧 FIX CENTRAL: Garantiza que Gasto siempre sea negativo e Ingreso siempre positivo
+function getSignedTxAmount(tx) {
+  const type = String(tx.type || "").trim().toLowerCase();
+  const raw = Number(tx.signedAmount !== undefined && tx.signedAmount !== null ? tx.signedAmount : tx.amount) || 0;
+  if (type === "gasto" || type === "expense") return -Math.abs(raw);
+  if (type === "ingreso" || type === "income") return Math.abs(raw);
+  return raw;
+}
+
+function setStatus(mode, text) {
   const el = document.getElementById("statusIndicator");
   if (!el) return;
-  el.className = "status-pill " + status;
-  if (status === "syncing") el.textContent = "Sincronizando...";
-  else if (status === "ok") el.textContent = "Sincronizado";
-  else if (status === "error") el.textContent = "Error del servidor";
+  el.className = `status-pill ${mode}`;
+  el.textContent = text;
 }
 
-/* ========== RELOJ AUTOMÁTICO ========== */
-setInterval(() => {
-  const qDate = document.getElementById("qDate");
-  if (qDate && !qDate.dataset.manual) qDate.value = getLocalISO();
-}, 60000);
-
-/* ========== TEMA ========== */
-function toggleTheme() {
-  document.body.classList.toggle("light-mode");
-  const isLight = document.body.classList.contains("light-mode");
-  document.getElementById("themeBtn").textContent = isLight ? "☀️" : "🌙";
-  localStorage.setItem("theme", isLight ? "light" : "dark");
+/* ============================================================
+   COMUNICACIÓN CON APPS SCRIPT
+   ============================================================ */
+async function apiPost(payload) {
+  setStatus("syncing", "Sincronizando...");
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ ...payload, token: SECRET_TOKEN })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Error en servidor");
+    return data;
+  } catch (err) {
+    console.error("DEFTER API POST Error:", err);
+    setStatus("error", "Error del servidor");
+    throw err;
+  }
 }
-if (localStorage.getItem("theme") === "light") {
-  document.body.classList.add("light-mode");
-  document.getElementById("themeBtn").textContent = "☀️";
+
+async function loadState() {
+  setStatus("syncing", "Sincronizando...");
+  try {
+    const url = `${API_URL}?action=getState&token=${encodeURIComponent(SECRET_TOKEN)}&_t=${Date.now()}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Error al obtener estado");
+
+    state = {
+      accounts: Array.isArray(data.accounts) ? data.accounts : [],
+      transactions: Array.isArray(data.transactions) ? data.transactions : [],
+      categories: Array.isArray(data.categories) ? data.categories : [],
+      notes: Array.isArray(data.notes) ? data.notes : []
+    };
+
+    if (!activeAccount || !state.accounts.some(a => a.name === activeAccount)) {
+      activeAccount = state.accounts[0] ? state.accounts[0].name : "";
+      if (activeAccount) localStorage.setItem("defter_active_account", activeAccount);
+    }
+
+    renderAll();
+    setStatus("ok", "Sincronizado");
+  } catch (err) {
+    console.error("DEFTER loadState Error:", err);
+    setStatus("error", "Error del servidor");
+  }
 }
 
-/* ========== NAV MÓVIL ========== */
+/* ============================================================
+   NAVEGACIÓN, TEMA Y MODALES
+   ============================================================ */
 function toggleNav() {
   document.getElementById("navMenu").classList.toggle("open");
   document.getElementById("navOverlay").classList.toggle("open");
 }
 
-/* ========== MODALES ========== */
-function openModal(id) { document.getElementById(id).classList.add("open"); }
-function closeModal(id) { document.getElementById(id).classList.remove("open"); }
+function switchView(viewName) {
+  document.querySelectorAll(".view").forEach(v => v.style.display = "none");
+  const target = document.getElementById(`view-${viewName}`);
+  if (target) target.style.display = "block";
 
-/* ========== API ========== */
-async function api(params) {
-  params.token = TOKEN;
-  const isGet = params.action === "getState";
-  let url = API_URL;
-  let opts = {};
+  document.querySelectorAll(".nav-item").forEach(item => {
+    item.classList.toggle("active", item.dataset.view === viewName);
+  });
 
-  setStatus("syncing");
-
-  try {
-    if (isGet) {
-      const qs = Object.keys(params).map(k => k+"="+encodeURIComponent(params[k])).join("&");
-      url += "?" + qs;
-    } else {
-      opts = { method: "POST", body: JSON.stringify(params) };
-    }
-
-    const res = await fetch(url, opts);
-    const data = await res.json();
-    setStatus("ok");
-    return data;
-  } catch(e) {
-    setStatus("error");
-    alert("Error de conexión con el servidor. Revisa tu internet.");
-    return { ok: false };
+  if (window.innerWidth <= 768) {
+    document.getElementById("navMenu").classList.remove("open");
+    document.getElementById("navOverlay").classList.remove("open");
   }
+
+  if (viewName === "reports") renderCharts();
+  if (viewName === "categories") renderCategories();
+  if (viewName === "notes") renderNotes();
 }
 
-async function loadState() {
-  setStatus("syncing");
-  const res = await api({ action: "getState" });
-  if (res.ok) {
-    state = res;
-    if (!activeAccount && state.accounts.length) activeAccount = state.accounts[0].name;
-    renderAll();
-    setStatus("ok");
-  } else {
-    setStatus("error");
-  }
+function toggleTheme() {
+  document.body.classList.toggle("light-mode");
+  const isLight = document.body.classList.contains("light-mode");
+  localStorage.setItem("defter_theme", isLight ? "light" : "dark");
+  document.getElementById("themeBtn").textContent = isLight ? "☀️" : "🌙";
+  if (document.getElementById("view-reports").style.display !== "none") renderCharts();
 }
 
-/* ========== CAMBIAR CUENTA ========== */
-function changeAccount(name) {
-  activeAccount = name;
-  renderLedger();
+function openModal(id) {
+  document.getElementById(id).classList.add("open");
 }
 
-/* ========== RENDER ========== */
+function closeModal(id) {
+  document.getElementById(id).classList.remove("open");
+}
+
+/* ============================================================
+   RENDERIZADO PRINCIPAL
+   ============================================================ */
 function renderAll() {
-  const accOpts = state.accounts.map(a => `<option value="${esc(a.name)}" ${a.name===activeAccount?'selected':''}>${esc(a.name)}</option>`).join("");
-  const catOpts = state.categories.map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("");
-
-  document.getElementById("accountSelector").innerHTML = accOpts;
-  document.getElementById("qAccount").innerHTML = accOpts;
-  document.getElementById("mAccount").innerHTML = accOpts;
-  document.getElementById("qCategory").innerHTML = catOpts;
-  document.getElementById("mCategory").innerHTML = catOpts;
-  document.getElementById("catParent").innerHTML = state.categories.filter(c=>c.kind==='group').map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-
-  renderLedger();
+  populateSelectors();
+  renderAccountsView();
   renderCategories();
   renderNotes();
-  renderCharts();
-}
-
-function renderLedger() {
-  if (!activeAccount) return;
-  
-  const acc = state.accounts.find(a => a.name === activeAccount);
-  document.getElementById("activeBalance").textContent = fmtMoney(acc?.balance || 0);
-
-  let txs = state.transactions.filter(t => t.account === activeAccount);
-  
-  const filterDate = document.getElementById("filterDate").value;
-  if (filterDate) txs = txs.filter(t => t.datetime.startsWith(filterDate));
-
-  // 🌟 EL CAMBIO MÁGICO: Invertimos el array para que la transacción de hoy salga primero
-  txs.reverse();
-
-  let html = "";
-  let mInc = 0;
-  let mExp = 0;
-  let currentBalance = acc ? acc.balance : 0;
-
-  const printMonth = (monthStr) => {
-    if(!monthStr) return "";
-    const mn = {
-      "01":"ENERO", "02":"FEBRERO", "03":"MARZO", "04":"ABRIL", "05":"MAYO", "06":"JUNIO",
-      "07":"JULIO", "08":"AGOSTO", "09":"SEPTIEMBRE", "10":"OCTUBRE", "11":"NOVIEMBRE", "12":"DICIEMBRE"
-    };
-    const parts = monthStr.split("-");
-    const name = mn[parts[1]] + " " + parts[0];
-    const net = mInc - mExp;
-    return `<tr class="month-separator">
-      <td colspan="4">
-        <span style="font-weight:bold; margin-right:10px;">📅 ${name}:</span>
-        <span class="amount-pos">${fmtMoney(mInc)}</span> - 
-        <span class="amount-neg">${fmtMoney(mExp)}</span> = 
-        <span class="m-total">${fmtMoney(net)}</span>
-      </td>
-    </tr>`;
-  };
-
-  let previousMonth = "";
-  if(txs.length > 0) previousMonth = txs[0].datetime.substring(0,7);
-
-  txs.forEach(t => {
-    const thisMonth = t.datetime.substring(0,7);
-    
-    if (thisMonth !== previousMonth) {
-       html += printMonth(previousMonth);
-       mInc = 0; mExp = 0;
-       previousMonth = thisMonth;
-    }
-
-    if (t.signedAmount > 0) mInc += t.signedAmount;
-    else mExp += Math.abs(t.signedAmount);
-
-    const sign = t.signedAmount >= 0 ? "+" : "";
-    const txtMonto = `${sign}${fmtMoney(t.signedAmount)}`;
-    const colorClass = t.signedAmount >= 0 ? 'amount-pos' : 'amount-neg';
-    const saldoActualStr = fmtMoney(currentBalance);
-
-    html += `<tr>
-      <td>
-        <div class="desc-main">${esc(t.category || "Sin categoría")}</div>
-        <div class="desc-sub">${esc(t.type)} · ${esc(t.datetime)}</div>
-        <div class="desc-sub" style="color:var(--cyan);">${esc(t.description || "")}</div>
-      </td>
-      <td style="text-align:right;" class="${colorClass}">${txtMonto}</td>
-      <td style="text-align:right;">${saldoActualStr}</td>
-      <td>
-        <div class="row-actions">
-          <button class="icon-btn" onclick="editTx('${t.id}')" title="Editar">✏️</button>
-          <button class="icon-btn" onclick="delTx('${t.id}')" title="Borrar">🗑️</button>
-        </div>
-      </td>
-    </tr>`;
-
-    currentBalance -= t.signedAmount;
-  });
-
-  if(txs.length > 0) html += printMonth(previousMonth);
-
-  document.getElementById("ledgerBody").innerHTML = html || "<tr><td colspan='4'>Sin movimientos</td></tr>";
-}
-
-function renderCharts() {
-  const ctxBar = document.getElementById('barChart').getContext('2d');
-  if(barChart) barChart.destroy();
-
-  let inc = 0, exp = 0;
-  const byCat = {};
-
-  state.transactions.forEach(t => {
-    if (t.signedAmount > 0) inc += t.signedAmount;
-    else exp += Math.abs(t.signedAmount);
-
-    if (t.signedAmount < 0) {
-      byCat[t.category || "Otros"] = (byCat[t.category || "Otros"] || 0) + Math.abs(t.signedAmount);
-    }
-  });
-
-  barChart = new Chart(ctxBar, {
-    type: 'bar',
-    data: {
-      labels: ['Ingresos', 'Gastos'],
-      datasets: [{ label: 'USD', data: [inc, exp], backgroundColor: ['#34d399', '#fb7185'], borderRadius: 6 }]
-    },
-    options: { responsive: true, plugins: { legend: { display: false } } }
-  });
-
-  const ctxDonut = document.getElementById('donutChart').getContext('2d');
-  if(donutChart) donutChart.destroy();
-  donutChart = new Chart(ctxDonut, {
-    type: 'doughnut',
-    data: {
-      labels: Object.keys(byCat),
-      datasets: [{ data: Object.values(byCat), backgroundColor: ['#22d3ee', '#60a5fa', '#fbbf24', '#f87171', '#a78bfa', '#34d399'] }]
-    },
-    options: { responsive: true, cutout: '60%' }
-  });
-}
-
-function renderCategories() {
-  let html = "";
-  const groups = state.categories.filter(c => c.kind === "group");
-  groups.forEach(g => {
-    html += `<div style="margin-bottom:12px; background:var(--panel); padding:12px; border-radius:8px; border:1px solid var(--border);">
-      <div style="font-weight:bold; display:flex; justify-content:space-between; align-items:center;">
-        <span>${esc(g.name)}</span>
-        <div>
-          <button class="icon-btn" onclick="editCat('${g.id}', '${esc(g.name)}')">✏️</button>
-          <button class="icon-btn" onclick="delCat('${g.id}')">🗑️</button>
-        </div>
-      </div>`;
-    state.categories.filter(c => c.parentId === g.id).forEach(sub => {
-      html += `<div style="padding:6px 0 6px 16px; display:flex; justify-content:space-between; align-items:center;">
-        <span>• ${esc(sub.name)}</span>
-        <div>
-          <button class="icon-btn" onclick="editCat('${sub.id}', '${esc(sub.name)}')">✏️</button>
-          <button class="icon-btn" onclick="delCat('${sub.id}')">🗑️</button>
-        </div>
-      </div>`;
-    });
-    html += `</div>`;
-  });
-  document.getElementById("catList").innerHTML = html || "No hay categorías.";
-}
-
-function renderNotes() {
-  let html = "";
-  state.notes.forEach(n => {
-    html += `<div class="note-card">
-      <div style="font-weight:bold; font-size:15px;">${esc(n.title)}</div>
-      <div class="desc-sub" style="flex:1;">${esc(n.content)}</div>
-      <div style="text-align:right;">
-        <button class="icon-btn" onclick="editNote('${n.id}', '${esc(n.title)}', '${esc(n.content)}')">✏️</button>
-        <button class="icon-btn" onclick="delNote('${n.id}')">🗑️</button>
-      </div>
-    </div>`;
-  });
-  document.getElementById("notesGrid").innerHTML = html || "Sin notas.";
-}
-
-/* ========== ACCIONES ========== */
-async function createAccount() {
-  const name = document.getElementById("newAccountName").value;
-  if(!name) return;
-  const res = await api({ action:"addAccount", name });
-  if(res.ok) { 
-    closeModal('accountModal'); 
-    document.getElementById("newAccountName").value=""; 
-    loadState(); 
-  } else {
-    alert(res.error || "Error al crear cuenta");
+  if (document.getElementById("view-reports").style.display !== "none") {
+    renderCharts();
   }
+}
+
+function populateSelectors() {
+  const accSel = document.getElementById("accountSelector");
+  const qAcc = document.getElementById("qAccount");
+  const txAcc = document.getElementById("txAccount");
+  const txFrom = document.getElementById("txFromAccount");
+  const txTo = document.getElementById("txToAccount");
+
+  const accOptions = state.accounts.map(a => `<option value="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`).join("");
+  accSel.innerHTML = accOptions || `<option value="">Sin cuentas</option>`;
+  qAcc.innerHTML = accOptions;
+  txAcc.innerHTML = accOptions;
+  txFrom.innerHTML = accOptions;
+  txTo.innerHTML = accOptions;
+
+  if (activeAccount) {
+    accSel.value = activeAccount;
+    qAcc.value = activeAccount;
+    txAcc.value = activeAccount;
+  }
+
+  const catOptions = buildCategorySelectOptions();
+  document.getElementById("qCategory").innerHTML = catOptions;
+  document.getElementById("txCategory").innerHTML = catOptions;
+
+  const groups = state.categories.filter(c => c.kind === "group");
+  document.getElementById("catParent").innerHTML = groups.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`).join("");
+}
+
+function buildCategorySelectOptions() {
+  const groups = state.categories.filter(c => c.kind === "group");
+  const items = state.categories.filter(c => c.kind !== "group");
+  let html = `<option value="">Sin categoría</option>`;
+
+  groups.forEach(g => {
+    const children = items.filter(i => i.parentId === g.id);
+    if (children.length > 0) {
+      html += `<optgroup label="${escapeHtml(g.name)}">`;
+      children.forEach(ch => {
+        html += `<option value="${escapeHtml(ch.name)}">${escapeHtml(ch.name)}</option>`;
+      });
+      html += `</optgroup>`;
+    } else {
+      html += `<option value="${escapeHtml(g.name)}">${escapeHtml(g.name)}</option>`;
+    }
+  });
+
+  items.filter(i => !groups.some(g => g.id === i.parentId)).forEach(orphan => {
+    html += `<option value="${escapeHtml(orphan.name)}">${escapeHtml(orphan.name)}</option>`;
+  });
+
+  return html;
+}
+
+function changeAccount(name) {
+  activeAccount = name;
+  localStorage.setItem("defter_active_account", activeAccount);
+  const qAcc = document.getElementById("qAccount");
+  if (qAcc) qAcc.value = activeAccount;
+  renderAccountsView();
+}
+
+function renderAccountsView() {
+  const accTxs = state.transactions
+    .filter(t => t.account === activeAccount)
+    .sort((a, b) => parseLocalDate(a.datetime) - parseLocalDate(b.datetime));
+
+  let running = 0;
+  const withRunning = accTxs.map(tx => {
+    const signed = getSignedTxAmount(tx);
+    running += signed;
+    return { ...tx, signedCalc: signed, runningBalance: running };
+  });
+
+  document.getElementById("activeBalance").textContent = formatMoney(running);
+  renderLedger(withRunning);
+}
+
+function renderLedger(preparedRows = null) {
+  const tbody = document.getElementById("ledgerBody");
+  const filterDate = document.getElementById("filterDate").value;
+
+  let rows = preparedRows;
+  if (!rows) {
+    const accTxs = state.transactions
+      .filter(t => t.account === activeAccount)
+      .sort((a, b) => parseLocalDate(a.datetime) - parseLocalDate(b.datetime));
+    let running = 0;
+    rows = accTxs.map(tx => {
+      const signed = getSignedTxAmount(tx);
+      running += signed;
+      return { ...tx, signedCalc: signed, runningBalance: running };
+    });
+  }
+
+  // Orden descendente (más recientes primero)
+  const descRows = [...rows].reverse().filter(tx => {
+    if (!filterDate) return true;
+    return String(tx.datetime || "").startsWith(filterDate);
+  });
+
+  if (descRows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:24px;">No hay movimientos para mostrar.</td></tr>`;
+    return;
+  }
+
+  // Calcular subtotal mensual (Ingresos - Gastos)
+  const monthTotals = {};
+  rows.forEach(tx => {
+    const d = parseLocalDate(tx.datetime);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    monthTotals[key] = (monthTotals[key] || 0) + tx.signedCalc;
+  });
+
+  let html = "";
+  let currentMonthKey = "";
+
+  descRows.forEach(tx => {
+    const d = parseLocalDate(tx.datetime);
+    const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+    if (mKey !== currentMonthKey) {
+      currentMonthKey = mKey;
+      const monthLabel = d.toLocaleDateString("es-EC", { month: "long", year: "numeric" });
+      html += `
+        <tr class="month-separator">
+          <td colspan="4">
+            <span style="text-transform:capitalize;">${escapeHtml(monthLabel)}</span>
+            <span class="m-total">${formatMoney(monthTotals[mKey] || 0)}</span>
+          </td>
+        </tr>
+      `;
+    }
+
+    const isNeg = tx.signedCalc < 0;
+    const amtClass = isNeg ? "amount-neg" : "amount-pos";
+    const catLabel = tx.category ? ` · ${tx.category}` : "";
+
+    html += `
+      <tr>
+        <td>
+          <div class="desc-main">${escapeHtml(tx.description || tx.type || "Movimiento")}</div>
+          <div class="desc-sub">${escapeHtml(tx.type || "")}${escapeHtml(catLabel)} · ${escapeHtml(tx.datetime || "")}</div>
+        </td>
+        <td style="text-align:right;" class="${amtClass}">${formatMoney(tx.signedCalc)}</td>
+        <td style="text-align:right;">${formatMoney(tx.runningBalance)}</td>
+        <td>
+          <div class="row-actions">
+            <button class="icon-btn" onclick="openEditTxModal('${escapeHtml(tx.id)}')" title="Editar">✏️</button>
+            <button class="icon-btn" onclick="deleteTx('${escapeHtml(tx.id)}')" title="Borrar">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+/* ============================================================
+   TRANSACCIONES (RÁPIDA, MODAL CREAR/EDITAR, BORRAR)
+   ============================================================ */
+async function submitQuickTx() {
+  const type = document.getElementById("qType").value;
+  const rawVal = parseFloat(document.getElementById("qAmount").value);
+  const desc = document.getElementById("qDesc").value.trim();
+  const dtInput = document.getElementById("qDate");
+  const category = document.getElementById("qCategory").value;
+  const account = document.getElementById("qAccount").value || activeAccount;
+
+  if (isNaN(rawVal) || rawVal === 0) {
+    alert("Ingresa un monto válido.");
+    return;
+  }
+
+  let finalType = type;
+  let absAmount = Math.abs(rawVal);
+  if (rawVal < 0) finalType = "Gasto";
+
+  try {
+    await apiPost({
+      action: "addTransaction",
+      type: finalType,
+      amount: absAmount,
+      account: account,
+      category: category,
+      description: desc,
+      datetime: dtInput.value || getLocalDateTimeValue()
+    });
+
+    document.getElementById("qAmount").value = "";
+    document.getElementById("qDesc").value = "";
+    dtInput.dataset.manual = "false";
+    dtInput.value = getLocalDateTimeValue();
+    await loadState();
+  } catch (_) {}
+}
+
+function openTxModal() {
+  document.getElementById("txEditId").value = "";
+  document.getElementById("txModalTitle").textContent = "Nueva Transacción";
+  document.getElementById("txType").value = "Gasto";
+  document.getElementById("txAccount").value = activeAccount || "";
+  document.getElementById("txFromAccount").value = activeAccount || "";
+  document.getElementById("txToAccount").value = "";
+  document.getElementById("txAmount").value = "";
+  document.getElementById("txCategory").value = "";
+  document.getElementById("txDesc").value = "";
+  document.getElementById("txDate").value = getLocalDateTimeValue();
+  toggleTxFields();
+  openModal("txModal");
+}
+
+function openEditTxModal(id) {
+  const tx = state.transactions.find(t => String(t.id) === String(id));
+  if (!tx) return;
+
+  const signed = getSignedTxAmount(tx);
+  document.getElementById("txEditId").value = tx.id;
+  document.getElementById("txModalTitle").textContent = "Editar Transacción";
+  document.getElementById("txType").value = signed < 0 ? "Gasto" : (tx.type || "Ingreso");
+  document.getElementById("txAccount").value = tx.account || activeAccount;
+  document.getElementById("txAmount").value = Math.abs(signed);
+  document.getElementById("txCategory").value = tx.category || "";
+  document.getElementById("txDesc").value = tx.description || "";
+  document.getElementById("txDate").value = getLocalDateTimeValue(parseLocalDate(tx.datetime));
+  toggleTxFields();
+  openModal("txModal");
+}
+
+function toggleTxFields() {
+  const isTransfer = document.getElementById("txType").value === "Transferencia";
+  document.getElementById("txSingleAccountWrap").style.display = isTransfer ? "none" : "block";
+  document.getElementById("txTransferAccountsWrap").style.display = isTransfer ? "block" : "none";
+}
+
+async function saveTxModal() {
+  const editId = document.getElementById("txEditId").value;
+  let type = document.getElementById("txType").value;
+  let rawAmount = parseFloat(document.getElementById("txAmount").value);
+  const category = document.getElementById("txCategory").value;
+  const description = document.getElementById("txDesc").value.trim();
+  const datetime = document.getElementById("txDate").value || getLocalDateTimeValue();
+
+  if (isNaN(rawAmount) || rawAmount === 0) {
+    alert("Ingresa un monto válido.");
+    return;
+  }
+
+  if (rawAmount < 0 && type !== "Transferencia") {
+    type = "Gasto";
+  }
+  const absAmount = Math.abs(rawAmount);
+
+  try {
+    if (editId) {
+      await apiPost({
+        action: "editTransaction",
+        id: editId,
+        type,
+        amount: absAmount,
+        category,
+        description,
+        datetime
+      });
+    } else if (type === "Transferencia") {
+      const fromAccount = document.getElementById("txFromAccount").value;
+      const toAccount = document.getElementById("txToAccount").value;
+      if (!fromAccount || !toAccount || fromAccount === toAccount) {
+        alert("Selecciona cuentas de origen y destino distintas.");
+        return;
+      }
+      await apiPost({
+        action: "addTransaction",
+        type: "Transferencia",
+        fromAccount,
+        toAccount,
+        amount: absAmount,
+        category,
+        description,
+        datetime
+      });
+    } else {
+      const account = document.getElementById("txAccount").value || activeAccount;
+      await apiPost({
+        action: "addTransaction",
+        type,
+        amount: absAmount,
+        account,
+        category,
+        description,
+        datetime
+      });
+    }
+
+    closeModal("txModal");
+    await loadState();
+  } catch (_) {}
+}
+
+async function deleteTx(id) {
+  if (!confirm("¿Eliminar esta transacción?")) return;
+  try {
+    await apiPost({ action: "deleteTransaction", id });
+    await loadState();
+  } catch (_) {}
+}
+
+/* ============================================================
+   CUENTAS
+   ============================================================ */
+async function createAccount() {
+  const input = document.getElementById("newAccountName");
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await apiPost({ action: "addAccount", name });
+    activeAccount = name;
+    localStorage.setItem("defter_active_account", activeAccount);
+    input.value = "";
+    closeModal("accountModal");
+    await loadState();
+  } catch (_) {}
 }
 
 async function editAccountName() {
   if (!activeAccount) return;
   const newName = prompt("Nuevo nombre para la cuenta:", activeAccount);
-  if(!newName || newName === activeAccount) return;
-  
-  const res = await api({ action:"renameAccount", oldName: activeAccount, newName: newName });
-  if(res.ok) {
-    activeAccount = newName;
-    loadState();
-  } else {
-    alert(res.error || "Error al cambiar el nombre");
+  if (!newName || newName.trim() === "" || newName.trim() === activeAccount) return;
+  try {
+    await apiPost({ action: "renameAccount", oldName: activeAccount, newName: newName.trim() });
+    activeAccount = newName.trim();
+    localStorage.setItem("defter_active_account", activeAccount);
+    await loadState();
+  } catch (_) {}
+}
+
+/* ============================================================
+   CATEGORÍAS
+   ============================================================ */
+function toggleCatParent() {
+  const kind = document.getElementById("catKind").value;
+  document.getElementById("catParent").style.display = kind === "item" ? "block" : "none";
+}
+
+function renderCategories() {
+  toggleCatParent();
+  const container = document.getElementById("catList");
+  const groups = state.categories.filter(c => c.kind === "group");
+  const items = state.categories.filter(c => c.kind !== "group");
+
+  if (groups.length === 0 && items.length === 0) {
+    container.innerHTML = `<div class="desc-sub">No hay categorías creadas todavía.</div>`;
+    return;
   }
-}
 
-async function submitQuick(type) {
-  const amt = Number(document.getElementById("qAmount").value);
-  const desc = document.getElementById("qDesc").value;
-  const dt = document.getElementById("qDate").value || getLocalISO();
-  const cat = document.getElementById("qCategory").value;
-  const acc = document.getElementById("qAccount").value;
+  let html = groups.map(g => {
+    const subs = items.filter(i => i.parentId === g.id);
+    return `
+      <div class="cat-group-card">
+        <div class="cat-group-header">
+          <span>📁 ${escapeHtml(g.name)}</span>
+          <div>
+            <button class="icon-btn" onclick="openEditCategory('${escapeHtml(g.id)}')" title="Editar">✏️</button>
+            <button class="icon-btn" onclick="deleteCategory('${escapeHtml(g.id)}')" title="Borrar">🗑️</button>
+          </div>
+        </div>
+        ${subs.map(s => `
+          <div class="cat-item-row">
+            <span>🏷️ ${escapeHtml(s.name)}</span>
+            <div>
+              <button class="icon-btn" onclick="openEditCategory('${escapeHtml(s.id)}')" title="Editar">✏️</button>
+              <button class="icon-btn" onclick="deleteCategory('${escapeHtml(s.id)}')" title="Borrar">🗑️</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }).join("");
 
-  if(!amt || amt <= 0) return alert("Monto inválido.");
+  const orphans = items.filter(i => !groups.some(g => g.id === i.parentId));
+  if (orphans.length > 0) {
+    html += `
+      <div class="cat-group-card">
+        <div class="cat-group-header"><span>Otras subcategorías</span></div>
+        ${orphans.map(s => `
+          <div class="cat-item-row">
+            <span>🏷️ ${escapeHtml(s.name)}</span>
+            <div>
+              <button class="icon-btn" onclick="openEditCategory('${escapeHtml(s.id)}')" title="Editar">✏️</button>
+              <button class="icon-btn" onclick="deleteCategory('${escapeHtml(s.id)}')" title="Borrar">🗑️</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
 
-  const res = await api({ action:"addTransaction", type, amount:amt, description:desc, datetime:dt, category:cat, account:acc });
-  if(res.ok) {
-    document.getElementById("qAmount").value="";
-    document.getElementById("qDesc").value="";
-    loadState();
-  } else alert(res.error);
-}
-
-async function submitModal() {
-  const id = document.getElementById("mId").value;
-  const type = document.getElementById("mType").value;
-  const amt = Number(document.getElementById("mAmount").value);
-  const desc = document.getElementById("mDesc").value;
-  const dt = document.getElementById("mDate").value || getLocalISO();
-  const cat = document.getElementById("mCategory").value;
-  const acc = document.getElementById("mAccount").value;
-
-  if(!amt || amt <= 0) return alert("Monto inválido.");
-
-  let action = id ? "editTransaction" : "addTransaction";
-  const payload = { action, type, amount:amt, description:desc, datetime:dt, category:cat, account:acc };
-  if(id) payload.id = id;
-
-  const res = await api(payload);
-  
-  if(res.ok) {
-    closeModal('txModal');
-    document.getElementById("mId").value="";
-    document.getElementById("mAmount").value="";
-    document.getElementById("mDesc").value="";
-    loadState();
-  } else alert(res.error);
-}
-
-function editTx(id) {
-  const tx = state.transactions.find(t => t.id === id);
-  if(!tx) return;
-
-  document.getElementById("txModalTitle").textContent = "Editar Transacción";
-  document.getElementById("mId").value = tx.id;
-  document.getElementById("mType").value = tx.type;
-  document.getElementById("mAmount").value = tx.amount;
-  document.getElementById("mDesc").value = tx.description;
-  
-  const dtFormatted = tx.datetime.replace(" ", "T");
-  document.getElementById("mDate").value = dtFormatted;
-  
-  document.getElementById("mCategory").value = tx.category;
-  document.getElementById("mAccount").value = tx.account;
-
-  openModal('txModal');
-}
-
-async function delTx(id) {
-  if(!confirm("¿Borrar transacción?")) return;
-  const res = await api({ action:"deleteTransaction", id });
-  if(res.ok) loadState();
+  container.innerHTML = html;
 }
 
 async function createCategory() {
-  const name = document.getElementById("catName").value;
+  const nameInput = document.getElementById("catName");
+  const name = nameInput.value.trim();
   const kind = document.getElementById("catKind").value;
-  const parent = document.getElementById("catParent").value;
-  if(!name) return;
-  const res = await api({ action:"addCategory", name, kind, parentId:parent });
-  if(res.ok) { document.getElementById("catName").value=""; loadState(); }
-  else alert(res.error);
+  const parentId = document.getElementById("catParent").value;
+  if (!name) return;
+
+  try {
+    await apiPost({ action: "addCategory", name, kind, parentId });
+    nameInput.value = "";
+    await loadState();
+  } catch (_) {}
 }
 
-async function editCat(id, oldName) {
-  const newName = prompt("Nuevo nombre:", oldName);
-  if(newName && newName !== oldName) {
-    const res = await api({ action:"editCategory", id, name:newName });
-    if(res.ok) loadState();
+function openEditCategory(id) {
+  const cat = state.categories.find(c => String(c.id) === String(id));
+  if (!cat) return;
+  document.getElementById("editCatId").value = cat.id;
+  document.getElementById("editCatName").value = cat.name;
+  openModal("editCatModal");
+}
+
+async function saveEditCategory() {
+  const id = document.getElementById("editCatId").value;
+  const name = document.getElementById("editCatName").value.trim();
+  if (!name) return;
+  try {
+    await apiPost({ action: "editCategory", id, name });
+    closeModal("editCatModal");
+    await loadState();
+  } catch (_) {}
+}
+
+async function deleteCategory(id) {
+  if (!confirm("¿Eliminar esta categoría?")) return;
+  try {
+    await apiPost({ action: "deleteCategory", id });
+    await loadState();
+  } catch (_) {}
+}
+
+/* ============================================================
+   NOTAS
+   ============================================================ */
+function renderNotes() {
+  const grid = document.getElementById("notesGrid");
+  if (!state.notes.length) {
+    grid.innerHTML = `<div class="desc-sub">No hay notas guardadas.</div>`;
+    return;
   }
-}
 
-async function delCat(id) {
-  if(!confirm("¿Borrar categoría?")) return;
-  const res = await api({ action:"deleteCategory", id });
-  if(res.ok) loadState();
+  grid.innerHTML = state.notes.map(n => `
+    <div class="note-card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+        <strong>${escapeHtml(n.title || "Sin título")}</strong>
+        <div style="display:flex; gap:2px;">
+          <button class="icon-btn" onclick="openEditNote('${escapeHtml(n.id)}')" title="Editar">✏️</button>
+          <button class="icon-btn" onclick="deleteNote('${escapeHtml(n.id)}')" title="Borrar">🗑️</button>
+        </div>
+      </div>
+      <div style="font-size:13px; white-space:pre-wrap; color:var(--text-muted);">${escapeHtml(n.content || "")}</div>
+    </div>
+  `).join("");
 }
 
 async function createNote() {
-  const title = document.getElementById("noteTitle").value;
-  const content = document.getElementById("noteContent").value;
-  if(!title) return;
-  const res = await api({ action:"saveNote", title, content });
-  if(res.ok) { document.getElementById("noteTitle").value=""; document.getElementById("noteContent").value=""; loadState(); }
+  const titleEl = document.getElementById("noteTitle");
+  const contentEl = document.getElementById("noteContent");
+  const title = titleEl.value.trim();
+  const content = contentEl.value.trim();
+  if (!title && !content) return;
+
+  try {
+    await apiPost({ action: "saveNote", title, content });
+    titleEl.value = "";
+    contentEl.value = "";
+    await loadState();
+  } catch (_) {}
 }
 
-async function editNote(id, oldTitle, oldContent) {
-  const t = prompt("Título:", oldTitle);
-  const c = prompt("Contenido:", oldContent);
-  if(t !== null && c !== null) {
-    const res = await api({ action:"editNote", id, title:t, content:c });
-    if(res.ok) loadState();
-  }
+function openEditNote(id) {
+  const note = state.notes.find(n => String(n.id) === String(id));
+  if (!note) return;
+  document.getElementById("editNoteId").value = note.id;
+  document.getElementById("editNoteTitle").value = note.title || "";
+  document.getElementById("editNoteContent").value = note.content || "";
+  openModal("editNoteModal");
 }
 
-async function delNote(id) {
-  if(!confirm("¿Borrar nota?")) return;
-  const res = await api({ action:"deleteNote", id });
-  if(res.ok) loadState();
+async function saveEditNote() {
+  const id = document.getElementById("editNoteId").value;
+  const title = document.getElementById("editNoteTitle").value.trim();
+  const content = document.getElementById("editNoteContent").value.trim();
+  try {
+    await apiPost({ action: "editNote", id, title, content });
+    closeModal("editNoteModal");
+    await loadState();
+  } catch (_) {}
 }
 
-function switchView(view) {
-  document.querySelectorAll(".view").forEach(v => v.style.display = "none");
-  document.getElementById("view-"+view).style.display = "block";
-  document.querySelectorAll(".nav-item").forEach(n => n.classList.remove("active"));
-  if (event && event.target) {
-    let target = event.target.closest(".nav-item");
-    if (target) target.classList.add("active");
-  }
-  if (window.innerWidth <= 768) toggleNav();
+async function deleteNote(id) {
+  if (!confirm("¿Eliminar esta nota?")) return;
+  try {
+    await apiPost({ action: "deleteNote", id });
+    await loadState();
+  } catch (_) {}
+}
+
+/* ============================================================
+   INFORMES (CHART.JS) Y CSV
+   ============================================================ */
+function renderCharts() {
+  if (typeof Chart === "undefined") return;
+
+  const isLight = document.body.classList.contains("light-mode");
+  const textColor = isLight ? "#0f172a" : "#f5f7fa";
+
+  const scopedTxs = activeAccount
+    ? state.transactions.filter(t => t.account === activeAccount)
+    : state.transactions;
+
+  let totalIngresos = 0;
+  let totalGastos = 0;
+  const byCat = {};
+
+  scopedTxs.forEach(tx => {
+    const signed = getSignedTxAmount(tx);
+    if (signed >= 0) {
+      totalIngresos += signed;
+    } else {
+      const gastoAbs = Math.abs(signed);
+      totalGastos += gastoAbs;
+      const cat = tx.category || "Sin categoría";
+      byCat[cat] = (byCat[cat] || 0) + gastoAbs;
+    }
+  });
+
+  if (barChartInstance) barChartInstance.destroy();
+  barChartInstance = new Chart(document.getElementById("barChart"), {
+    type: "bar",
+    data: {
+      labels: ["Ingresos", "Gastos"],
+      datasets: [{
+        label: activeAccount || "Total",
+        data: [totalIngresos, totalGastos],
+        backgroundColor: ["#34d399", "#fb7185"],
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false, labels: { color: textColor } } },
+      scales: {
+        x: { ticks: { color: textColor } },
+        y: { ticks: { color: textColor } }
+      }
+    }
+  });
+
+  const catLabels = Object.keys(byCat);
+  const catValues = Object.values(byCat);
+  const palette = ["#22d3ee", "#fb7185", "#fbbf24", "#60a5fa", "#34d399", "#a78bfa", "#f472b6"];
+
+  if (donutChartInstance) donutChartInstance.destroy();
+  donutChartInstance = new Chart(document.getElementById("donutChart"), {
+    type: "doughnut",
+    data: {
+      labels: catLabels.length ? catLabels : ["Sin gastos"],
+      datasets: [{
+        data: catValues.length ? catValues : [1],
+        backgroundColor: catValues.length ? catLabels.map((_, i) => palette[i % palette.length]) : ["rgba(148,163,184,0.25)"]
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "bottom", labels: { color: textColor } } }
+    }
+  });
 }
 
 function exportCSV() {
-  let csv = "Fecha,Cuenta,Categoría,Tipo,Descripción,Monto\n";
-  state.transactions.forEach(t => {
-    csv += `"${t.datetime}","${t.account}","${t.category}","${t.type}","${t.description}",${t.signedAmount}\n`;
+  const rows = activeAccount
+    ? state.transactions.filter(t => t.account === activeAccount)
+    : state.transactions;
+
+  const headers = ["Fecha", "Cuenta", "Categoría", "Tipo", "Descripción", "Monto"];
+  const lines = [headers.join(",")];
+
+  rows.forEach(tx => {
+    const signed = getSignedTxAmount(tx);
+    const cols = [
+      tx.datetime || "",
+      tx.account || "",
+      tx.category || "",
+      tx.type || "",
+      tx.description || "",
+      signed.toFixed(2)
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`);
+    lines.push(cols.join(","));
   });
-  const blob = new Blob([csv], { type: 'text/csv' });
+
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "defter.csv";
+  a.href = url;
+  a.download = `defter_${activeAccount || "movimientos"}.csv`;
   a.click();
+  URL.revokeObjectURL(url);
 }
 
-/* ========== PWA ========== */
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW error:', err));
-  });
-}
-window.addEventListener('beforeinstallprompt', (e) => {
+/* ============================================================
+   PWA & INICIALIZACIÓN
+   ============================================================ */
+window.addEventListener("beforeinstallprompt", e => {
   e.preventDefault();
   deferredPrompt = e;
-  const installBtn = document.getElementById('installBtn');
-  if(installBtn) installBtn.style.display = 'inline-flex';
+  const btn = document.getElementById("installBtn");
+  if (btn) btn.style.display = "inline-flex";
 });
+
 async function installPWA() {
-  if (!deferredPrompt) {
-    alert("Para instalar en iPhone: toca el botón Compartir (⬆️) y elige 'Añadir a pantalla de inicio'.");
-    return;
-  }
+  if (!deferredPrompt) return;
   deferredPrompt.prompt();
-  const { outcome } = await deferredPrompt.userChoice;
-  if (outcome === 'accepted') {
-    document.getElementById('installBtn').style.display = 'none';
-  }
+  await deferredPrompt.userChoice;
   deferredPrompt = null;
+  document.getElementById("installBtn").style.display = "none";
 }
 
-/* ========== INICIALIZAR ========== */
-document.getElementById("qDate").value = getLocalISO();
-document.getElementById("mDate").value = getLocalISO();
-document.getElementById("qDate").addEventListener("change", function() { this.dataset.manual = "true"; });
-loadState();
+function escapeHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  if (localStorage.getItem("defter_theme") === "light") {
+    document.body.classList.add("light-mode");
+    document.getElementById("themeBtn").textContent = "☀️";
+  }
+
+  const qDate = document.getElementById("qDate");
+  if (qDate) {
+    qDate.value = getLocalDateTimeValue();
+    qDate.addEventListener("change", () => { qDate.dataset.manual = "true"; });
+    setInterval(() => {
+      if (qDate.dataset.manual !== "true") {
+        qDate.value = getLocalDateTimeValue();
+      }
+    }, 30000);
+  }
+
+  loadState();
+});
 </script>
 </body>
 </html>
